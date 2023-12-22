@@ -1,0 +1,111 @@
+#include <iostream>
+#include <fstream>
+#include <cstdlib>
+#include <algorithm>
+#include <mpi.h>
+
+void merge(long long arr[], long long temp[], int l, int m, int r) {
+    int n1 = m - l + 1;
+    int n2 = r - m;
+
+    for (int i = 0; i < n1; i++)
+        temp[i] = arr[l + i];
+
+    int i = 0;
+    int j = m + 1;
+    int k = l;
+
+    while (i < n1 && j <= r) {
+        if (temp[i] <= arr[j]) {
+            arr[k] = temp[i];
+            i++;
+        } else {
+            arr[k] = arr[j];
+            j++;
+        }
+        k++;
+    }
+
+    while (i < n1) {
+        arr[k] = temp[i];
+        i++;
+        k++;
+    }
+}
+
+void mergeSort(long long arr[], long long temp[], int l, int r) {
+    if (l < r) {
+        int m = l + (r - l) / 2;
+
+        mergeSort(arr, temp, l, m);
+        mergeSort(arr, temp, m + 1, r);
+
+        merge(arr, temp, l, m, r);
+    }
+}
+
+int main(int argc, char *argv[]) {
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    const int n = 1000000;
+    const int chunk_size = n / size;
+    long long *arr = new long long[n];
+    long long *temp = new long long[n];
+
+    if (rank == 0) {
+        std::ifstream inFile("input.txt");
+        for (int i = 0; i < n; i++) {
+            inFile >> arr[i];
+        }
+        inFile.close();
+    }
+
+    MPI_Bcast(arr, n, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+
+    MPI_Barrier(MPI_COMM_WORLD); 
+
+    double start_time = MPI_Wtime();
+
+    int local_start = rank * chunk_size;
+    int local_end = local_start + chunk_size - 1;
+
+    mergeSort(arr, temp, local_start, local_end);
+
+    MPI_Gather(arr + local_start, chunk_size, MPI_LONG_LONG, arr, chunk_size, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+
+    MPI_Barrier(MPI_COMM_WORLD); 
+
+    double end_time = MPI_Wtime();
+
+    if (rank == 0) {
+        mergeSort(arr, temp, 0, n - 1);
+
+        std::ofstream outFile("output_mpi.txt");
+        for (int i = 0; i < n; i++) {
+            outFile << arr[i] << " ";
+        }
+        outFile << std::endl;
+
+        if (std::is_sorted(arr, arr + n)) {
+            std::cout << "Sorted array is correct.\n";
+        } else {
+            std::cout << "Sorted array is not correct.\n";
+        }
+
+        outFile.close();
+
+        std::ofstream timeFile("time_mpi.txt", std::ios::app);
+        timeFile << end_time - start_time << std::endl;
+        timeFile.close();
+    }
+
+    MPI_Finalize();
+
+    delete[] arr;
+    delete[] temp;
+    return 0;
+}
